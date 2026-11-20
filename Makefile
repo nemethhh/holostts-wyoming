@@ -26,3 +26,21 @@ $(MODEL_DIR)/stress.trie:
 
 test: models
 	uv run pytest
+
+image:
+	docker build -f holostts/Dockerfile --build-arg BUILD_FROM=ghcr.io/home-assistant/amd64-base-debian:trixie-2026.11.0 -t holostts-addon .
+
+image-cuda:
+	docker build -f docker/Dockerfile.cuda -t holostts-wyoming .
+
+# run IMAGE's server on 127.0.0.1:10299 and synthesize one request
+SMOKE_IMAGE ?= holostts-addon
+SMOKE_ARGS ?= --model-dir /models/onnx-int8
+smoke:
+	docker rm -f holostts-smoke >/dev/null 2>&1 || true
+	docker run -d --name holostts-smoke -p 127.0.0.1:10299:10200 --entrypoint /opt/venv/bin/holostts-wyoming $(SMOKE_IMAGE) $(SMOKE_ARGS)
+	until docker logs holostts-smoke 2>&1 | grep -q Ready; do sleep 1; docker inspect -f '{{.State.Running}}' holostts-smoke | grep -q true || { docker logs holostts-smoke; exit 1; }; done
+	uv run python tools/wyoming_client.py 127.0.0.1 10299 "Увімкнено світло у вітальні. У вітальні 21 °C." .cache/smoke.wav
+	docker stats --no-stream --format '{{.MemUsage}}' holostts-smoke
+	docker logs holostts-smoke 2>&1 | tail -3
+	docker rm -f holostts-smoke >/dev/null

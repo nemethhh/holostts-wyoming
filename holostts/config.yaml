@@ -1,0 +1,28 @@
+name: HolosTTS
+version: 0.1.0
+slug: holostts
+description: Natural Ukrainian text to speech for Assist with HolosTTS
+url: https://github.com/nemethhh/holostts-wyoming
+arch:
+  - amd64
+  - aarch64
+image: ghcr.io/nemethhh/{arch}-addon-holostts
+init: false
+startup: services
+discovery:
+  - wyoming
+hassio_api: true
+watchdog: tcp://[HOST]:10200
+options:
+  voice: Speaker_0
+  speed: 1.0
+  threads: 2
+  stress_overrides: []
+  debug_logging: false
+schema:
+  voice: str
+  speed: float(0.5,2)
+  threads: int(1,8)
+  stress_overrides:
+    - str
+  debug_logging: bool
