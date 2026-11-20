@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -13,6 +14,7 @@ F = TypeVar("F", bound=StepFactory)
 
 DEFAULT_STEPS = ["normalize", "numbers", "overrides", "stress", "ipa"]
 
+_LOGGER = logging.getLogger(__name__)
 _REGISTRY: dict[str, StepFactory] = {}
 _SENTENCE_END = re.compile(r"(?<=[.!?…])\s+|\n+")
 _CLAUSE_END = re.compile(r"(?<=[,;:—–])\s+")
@@ -38,11 +40,12 @@ def build_chain(names: list[str], config: StepConfig) -> TextStep:
     unknown = [n for n in names if n not in _REGISTRY]
     if unknown:
         raise ValueError(f"unknown steps {unknown}; known: {sorted(_REGISTRY)}")
-    steps = [_REGISTRY[n](config) for n in names]
+    steps = [(n, _REGISTRY[n](config)) for n in names]
 
     def chain(text: str) -> str:
-        for step in steps:
+        for name, step in steps:
             text = step(text)
+            _LOGGER.debug("%s: %s", name, text)
         return text
 
     return chain
@@ -50,6 +53,14 @@ def build_chain(names: list[str], config: StepConfig) -> TextStep:
 
 def split_sentences(text: str) -> list[str]:
     return [s.strip() for s in _SENTENCE_END.split(text) if s.strip()]
+
+
+def take_sentences(buffer: str) -> tuple[list[str], str]:
+    """Split streamed text into its complete sentences and the unfinished rest, kept as sent."""
+    ends = list(_SENTENCE_END.finditer(buffer))
+    if not ends:
+        return [], buffer
+    return split_sentences(buffer[: ends[-1].start()]), buffer[ends[-1].end():]
 
 
 def _pack(pieces: list[str], limit: int) -> list[str]:

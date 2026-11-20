@@ -44,3 +44,13 @@ def test_hyphenated_words_keep_stress():
     s = build_chain(["stress"], StepConfig(trie_path=TRIE))
     out = s("будь-який хто-небудь по-українськи")
     assert all(A in word for word in out.split())
+
+
+def test_override_with_typographic_apostrophe_matches():
+    o = build_chain(["overrides"], StepConfig(overrides=["сім’я+"]))
+    assert o("Моя сім'я") == f"Моя сім'я{A}"
+
+
+def test_override_with_pasted_stress_mark_matches():
+    o = build_chain(["overrides"], StepConfig(overrides=[f"замо{A}к"]))
+    assert o("Замок") == f"Замо{A}к"

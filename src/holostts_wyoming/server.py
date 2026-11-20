@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import threading
+from contextlib import aclosing
 from dataclasses import dataclass
 from typing import AsyncIterator, Callable
 
@@ -17,7 +19,7 @@ from wyoming.tts import Synthesize, SynthesizeChunk, SynthesizeStart, Synthesize
 
 from . import __version__
 from .engines.base import Engine
-from .pipeline import split_sentences
+from .pipeline import take_sentences
 
 _LOGGER = logging.getLogger(__name__)
 _WIDTH, _CHANNELS = 2, 1
@@ -79,12 +81,9 @@ class HolosHandler(AsyncEventHandler):
                 self._stream_buffer = ""
                 await self._audio_start()
             elif SynthesizeChunk.is_type(event.type) and self._stream_buffer is not None:
-                self._stream_buffer += SynthesizeChunk.from_event(event).text
-                sentences = split_sentences(self._stream_buffer)
-                if len(sentences) > 1:
-                    # the last piece may be an unfinished sentence (or "21" of "21.5"): keep it
-                    head, self._stream_buffer = sentences[:-1], sentences[-1]
-                    await self._speak(" ".join(head), self._stream_voice)
+                done, self._stream_buffer = take_sentences(self._stream_buffer + SynthesizeChunk.from_event(event).text)
+                if done:
+                    await self._speak(" ".join(done), self._stream_voice)
             elif SynthesizeStop.is_type(event.type) and self._stream_buffer is not None:
                 rest, self._stream_buffer = self._stream_buffer, None
                 await self._speak(rest, self._stream_voice)
@@ -98,6 +97,9 @@ class HolosHandler(AsyncEventHandler):
                 await self._audio_start()
                 await self._speak(synthesize.text, voice)
                 await self.write_event(AudioStop().event())
+        except ConnectionError as error:
+            _LOGGER.info("Client disconnected (%s)", error)
+            return False
         except Exception as error:  # keep the connection; report to the client
             _LOGGER.exception("Error handling %s", event.type)
             await self.write_event(Error(text=str(error), code=error.__class__.__name__).event())
@@ -116,22 +118,25 @@ class HolosHandler(AsyncEventHandler):
     async def _speak(self, text: str, voice: str) -> None:
         _LOGGER.debug("Text: %s", text)
         for phonemes in self._phonemizer(text):
-            _LOGGER.debug("Phonemes: %s", phonemes)
-            async for chunk in self._synthesize(phonemes, voice):
-                pcm = (np.clip(chunk, -1.0, 1.0) * 32767).astype("<i2").tobytes()
-                await self.write_event(
-                    AudioChunk(rate=self._engine.sample_rate, width=_WIDTH, channels=_CHANNELS, audio=pcm).event()
-                )
+            async with aclosing(self._synthesize(phonemes, voice)) as chunks:
+                async for chunk in chunks:
+                    pcm = (np.clip(chunk, -1.0, 1.0) * 32767).astype("<i2").tobytes()
+                    await self.write_event(
+                        AudioChunk(rate=self._engine.sample_rate, width=_WIDTH, channels=_CHANNELS, audio=pcm).event()
+                    )
 
     async def _synthesize(self, phonemes: str, voice: str) -> AsyncIterator[np.ndarray]:
         """Run the engine in a thread, one synthesis at a time, handing chunks over as they come."""
         loop = asyncio.get_running_loop()
         queue: asyncio.Queue = asyncio.Queue()
         done = object()
+        stop = threading.Event()
 
         def produce() -> None:
             try:
                 for chunk in self._engine.stream(phonemes, voice, self._settings.speed):
+                    if stop.is_set():
+                        break
                     loop.call_soon_threadsafe(queue.put_nowait, chunk)
             except Exception as error:
                 loop.call_soon_threadsafe(queue.put_nowait, error)
@@ -140,8 +145,12 @@ class HolosHandler(AsyncEventHandler):
 
         async with self._lock:
             worker = loop.run_in_executor(None, produce)
-            while (item := await queue.get()) is not done:
-                if isinstance(item, Exception):
-                    raise item
-                yield item
-            await worker
+            try:
+                while (item := await queue.get()) is not done:
+                    if isinstance(item, Exception):
+                        raise item
+                    yield item
+            finally:
+                # the client may be gone: stop and wait, so the next request never runs alongside
+                stop.set()
+                await worker

@@ -7,6 +7,7 @@ import numpy as np
 import pytest
 from wyoming.audio import AudioChunk, AudioStart, AudioStop
 from wyoming.client import AsyncTcpClient
+from wyoming.event import async_read_event, async_write_event
 from wyoming.info import Describe, Info
 from wyoming.tts import Synthesize, SynthesizeChunk, SynthesizeStart, SynthesizeStop, SynthesizeStopped, SynthesizeVoice
 
@@ -17,9 +18,11 @@ from holostts_wyoming.server import HolosHandler, Settings, make_info
 class FakeEngine:
     sample_rate = 24000
 
-    def __init__(self, delay=0.0):
+    def __init__(self, delay=0.0, chunks=1):
         self.calls = []
         self.delay = delay
+        self.chunks = chunks
+        self.yielded = 0
         self.active = 0
         self.max_active = 0
         self._guard = threading.Lock()
@@ -32,9 +35,12 @@ class FakeEngine:
             self.active += 1
             self.max_active = max(self.max_active, self.active)
         try:
-            time.sleep(self.delay)
-            self.calls.append((phonemes, voice))
-            yield np.zeros(2400, dtype=np.float32)
+            for i in range(self.chunks):
+                time.sleep(self.delay)
+                if i == 0:
+                    self.calls.append((phonemes, voice))
+                self.yielded += 1
+                yield np.zeros(2400, dtype=np.float32)
         finally:
             with self._guard:
                 self.active -= 1
@@ -184,3 +190,59 @@ def test_concurrent_clients_are_serialized():
     results = run(go())
     assert engine.max_active == 1
     assert all(r[-1].type == "audio-stop" and any(e.type == "audio-chunk" for e in r) for r in results)
+
+
+def test_streaming_speaks_a_finished_sentence_without_waiting():
+    engine = FakeEngine()
+
+    async def go():
+        server, port = await serve(engine)
+        async with AsyncTcpClient("127.0.0.1", port) as client:
+            await client.write_event(SynthesizeStart().event())
+            await client.write_event(SynthesizeChunk(text="Увімкнено світло. ").event())
+            for _ in range(100):
+                if engine.calls:
+                    break
+                await asyncio.sleep(0.02)
+            early = [c[0] for c in engine.calls]
+            await client.write_event(SynthesizeChunk(text="Готово.").event())
+            await client.write_event(SynthesizeStop().event())
+            await read_until(client, {SynthesizeStopped().event().type})
+        server.close()
+        return early
+
+    assert run(go()) == ["Увімкнено світло."]
+    assert [c[0] for c in engine.calls] == ["Увімкнено світло.", "Готово."]
+
+
+def hang_up_then_synthesize(engine):
+    """Client A hangs up after the first audio chunk; client B then asks for speech."""
+
+    async def go():
+        server, port = await serve(engine)
+        reader, writer = await asyncio.open_connection("127.0.0.1", port)
+        await async_write_event(Synthesize(text="Привіт.").event(), writer)
+        await async_read_event(reader)  # audio-start
+        await async_read_event(reader)  # first chunk
+        writer.transport.abort()
+        async with AsyncTcpClient("127.0.0.1", port) as client:
+            await client.write_event(Synthesize(text="Привіт.").event())
+            events = await read_until(client, {"audio-stop"})
+        await asyncio.sleep(0.1)
+        server.close()
+        return events
+
+    return run(go())
+
+
+def test_hang_up_stops_synthesis_before_the_next_request():
+    engine = FakeEngine(delay=0.05, chunks=20)
+    events = hang_up_then_synthesize(engine)
+    assert engine.max_active == 1
+    assert engine.yielded < 30  # A stopped early; B made all 20
+    assert sum(e.type == "audio-chunk" for e in events) == 20
+
+
+def test_hang_up_is_not_logged_as_an_error(caplog):
+    hang_up_then_synthesize(FakeEngine(delay=0.05, chunks=20))
+    assert [r.getMessage() for r in caplog.records if r.levelno >= 30 or r.exc_info] == []

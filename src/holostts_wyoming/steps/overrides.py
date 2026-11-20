@@ -1,6 +1,7 @@
 import re
 
 from ..pipeline import StepConfig, TextStep, register
+from .normalize import normalize_characters
 from .stress import ACUTE, WORD
 
 
@@ -9,7 +10,8 @@ _PLUS_AFTER_VOWEL = re.compile(r"(?<=[АЕЄИІЇОУЮЯаеєиіїоуюя])
 
 @register("overrides")
 def overrides(config: StepConfig) -> TextStep:
-    table = {o.strip().replace("+", "").lower(): o.strip().replace("+", ACUTE) for o in config.overrides if o.strip()}
+    entries = [normalize_characters(o.strip()).replace("+", ACUTE) for o in config.overrides if o.strip()]
+    table = {e.replace(ACUTE, "").lower(): e for e in entries}
 
     def replace(m):
         word = m.group(0)

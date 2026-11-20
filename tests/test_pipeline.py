@@ -1,6 +1,8 @@
 import pytest
 
-from holostts_wyoming.pipeline import StepConfig, build_chain, register, split_sentences
+import logging
+
+from holostts_wyoming.pipeline import StepConfig, build_chain, register, split_sentences, take_sentences
 
 
 def test_split_sentences_on_punctuation_and_newlines():
@@ -49,3 +51,25 @@ def test_overlong_sentence_without_punctuation_splits_at_spaces():
     sentence = " ".join(["слово"] * 80)
     parts = make_phonemizer(StepConfig(), ["t_id"])(sentence)
     assert all(len(p) <= 200 for p in parts) and " ".join(parts).split() == sentence.split()
+
+
+@pytest.mark.parametrize(
+    "buffer,done,rest",
+    [
+        ("Увімкнено світло. ", ["Увімкнено світло."], ""),
+        ("Привіт. Як ", ["Привіт."], "Як "),
+        ("Раз. Два! Три", ["Раз.", "Два!"], "Три"),
+        ("У вітальні 21", [], "У вітальні 21"),
+        ("Привіт.\n", ["Привіт."], ""),
+    ],
+)
+def test_take_sentences_from_a_stream(buffer, done, rest):
+    assert take_sentences(buffer) == (done, rest)
+
+
+def test_chain_logs_each_step_at_debug(caplog):
+    register("t_up")(lambda c: lambda s: s.upper())
+    register("t_x")(lambda c: lambda s: s + "!")
+    with caplog.at_level(logging.DEBUG, logger="holostts_wyoming.pipeline"):
+        build_chain(["t_up", "t_x"], StepConfig())("ok")
+    assert [r.getMessage() for r in caplog.records] == ["t_up: OK", "t_x: OK!"]

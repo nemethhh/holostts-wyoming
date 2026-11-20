@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import re
+from functools import cache
 
+import pymorphy3
 from num2words import num2words
 
 from ..pipeline import StepConfig, TextStep, register
@@ -15,7 +17,6 @@ _SYMBOL_NOUNS = {
     "°": ("градус", "градуси", "градусів", "градуса"),
     "%": ("відсоток", "відсотки", "відсотків", "відсотка"),
 }
-_FEMININE_STEMS = ("хвилин", "годин", "секунд", "доб")
 _WORD = r"[А-ЩЬЮЯЄІЇҐа-щьюяєіїґ'́]+"
 
 _TIME = re.compile(r"(?<![\d:])([01]?\d|2[0-3]):([0-5]\d)(?![\d:])")
@@ -23,7 +24,6 @@ _NUMBER = re.compile(
     r"(?<![\w.,])([+-])?(\d+)(?:[.,](\d+))?(?![\d])"
     r"(?:\s*(°C|°F|°|%)|(\s+)(" + _WORD + r"))?"
 )
-_NA_BEFORE = re.compile(r"(?:^|\s)[Нн]а\s+$")
 _DIGITS = re.compile(r"\d+")
 # hours as feminine ordinals, stressed here: the dictionary's first record for п'ята / сьома is another word
 _A = "\u0301"
@@ -40,6 +40,19 @@ def _words(n: int, feminine: bool = False, case: str | None = None) -> str:
     if case:
         kwargs["case"] = case
     return num2words(n, **kwargs)
+
+
+@cache
+def _morph() -> pymorphy3.MorphAnalyzer:
+    return pymorphy3.MorphAnalyzer(lang="uk")
+
+
+def _agreement(noun: str) -> tuple[str | None, bool]:
+    """The noun's gender (masc, femn, neut or None) and whether it is accusative singular."""
+    for parse in _morph().parse(noun.replace("\u0301", "").lower()):
+        if "NOUN" in parse.tag:
+            return parse.normalized.tag.gender, "accs" in parse.tag and "plur" not in parse.tag
+    return None, False
 
 
 def _count_form(n: int) -> int:
@@ -72,16 +85,18 @@ def _time(m: re.Match) -> str:
     return f"{_HOURS[hour]} {tail}"
 
 
-def _number(m: re.Match, text: str) -> str:
+def _number(m: re.Match) -> str:
     sign, whole, frac, symbol, space, noun = m.groups()
     n = int(whole)
     prefix = {"-": "мінус ", "+": "плюс "}.get(sign or "", "")
-    feminine = bool(noun) and noun.lower().startswith(_FEMININE_STEMS)
+    gender, accusative = _agreement(noun) if noun else (None, False)
+    feminine = gender == "femn"
     if frac is not None:
         spoken = _decimal(n, frac)
     else:
-        accusative = feminine and _NA_BEFORE.search(text[: m.start()]) is not None
-        spoken = _words(n, feminine=feminine, case="accusative" if accusative else None)
+        spoken = _words(n, feminine=feminine, case="accusative" if feminine and accusative else None)
+        if gender == "neut" and spoken.endswith("один"):
+            spoken = spoken[: -len("один")] + "одне"  # num2words has no neuter for Ukrainian
 
     if symbol:
         forms = _SYMBOL_NOUNS[symbol]
@@ -96,7 +111,7 @@ def _number(m: re.Match, text: str) -> str:
 def numbers(config: StepConfig) -> TextStep:
     def step(text: str) -> str:
         text = _TIME.sub(_time, text)
-        text = _NUMBER.sub(lambda m: _number(m, text), text)
+        text = _NUMBER.sub(_number, text)
         # whatever the rules above left (versions, addresses, "1 000") is read digit group by digit group
         return _DIGITS.sub(lambda m: _words(int(m.group(0))), text)
 

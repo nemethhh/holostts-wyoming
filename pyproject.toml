@@ -1,6 +1,6 @@
 [project]
 name = "holostts-wyoming"
-version = "0.1.0"
+version = "0.1.1"
 description = "Wyoming text-to-speech server for Ukrainian with HolosTTS"
 readme = "README.md"
 license = "MIT"
@@ -15,6 +15,8 @@ dependencies = [
     "num2words==0.5.14",
     "ipa-uk @ git+https://github.com/patriotyk/ipa-uk@3faf05ec50fd4880965b6c76f8e479a4f82117f5",
     "zeroconf>=0.132",
+    "pymorphy3==2.0.6",
+    "pymorphy3-dicts-uk==2.4.1.1.1663094765",
 ]
 
 [project.scripts]
@@ -37,10 +39,13 @@ build-backend = "hatchling.build"
 allow-direct-references = true
 
 [tool.uv]
-# holos-tts-onnx pulls the CUDA build on Linux and the hub client; we load local CPU bundles
+# holos-tts-onnx pulls the CUDA build on Linux and the hub client; we load local CPU bundles.
+# pymorphy3 pulls Russian dictionaries and setuptools; Ukrainian needs neither
 override-dependencies = [
     "onnxruntime-gpu; sys_platform == 'never'",
     "huggingface-hub; sys_platform == 'never'",
+    "pymorphy3-dicts-ru; sys_platform == 'never'",
+    "setuptools; sys_platform == 'never'",
 ]
 
 [tool.pytest.ini_options]

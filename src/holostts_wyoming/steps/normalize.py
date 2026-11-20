@@ -9,10 +9,14 @@ _QUOTES = re.compile(r"[\"«»“”„]")
 _END = ".?!:…"
 
 
+def normalize_characters(text: str) -> str:
+    return unicodedata.normalize("NFKC", text).translate(_APOSTROPHES)
+
+
 @register("normalize")
 def normalize(config: StepConfig) -> TextStep:
     def step(text: str) -> str:
-        text = unicodedata.normalize("NFKC", text).translate(_APOSTROPHES)
+        text = normalize_characters(text)
         text = _DASHES.sub("-", text)
         text = _QUOTES.sub("", text)
         text = " ".join(text.split())
