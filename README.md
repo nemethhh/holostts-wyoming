@@ -23,7 +23,7 @@ See [docker/README.md](docker/README.md).
 ## Development
 
 `make models` downloads the pinned model files into `models/`; `make test` runs the tests (pytest);
-`make image` / `make image-cuda` / `make image-vulkan` build the images; `make smoke` runs the add-on image and synthesizes one request.
+`make image` / `make image-cuda` / `make image-cuda13` / `make image-vulkan` build the images; `make smoke` runs the add-on image and synthesizes one request.
 `tools/wyoming_client.py HOST PORT TEXT OUT.wav [--stream]` talks to any Wyoming TTS server and prints the time to
 first audio.
 

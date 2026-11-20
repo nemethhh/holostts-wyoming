@@ -1,6 +1,7 @@
 services:
   holostts:
-    image: ghcr.io/nemethhh/holostts-wyoming:latest
+    # RTX 20xx and newer: HOLOSTTS_TAG=latest-cuda13 (CUDA 13); the default also runs GTX 10xx
+    image: ghcr.io/nemethhh/holostts-wyoming:${HOLOSTTS_TAG:-latest}
     restart: unless-stopped
     gpus: all
     # host network lets Home Assistant discover it by zeroconf; otherwise publish 10200 and add it by host/port

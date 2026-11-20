@@ -7,7 +7,7 @@ HF_URL := https://huggingface.co/patriotyk/HolosTTS/resolve/$(HOLOS_REV)
 TRIE_URL := https://raw.githubusercontent.com/patriotyk/ukrainian-word-stress/$(STRESS_REV)/ukrainian_word_stress/data/stress.trie
 BUNDLE_FILES := holos_onnx.json voices.npz encoder.onnx prosody.onnx source.onnx decoder_window.onnx
 
-.PHONY: models models-fp32 test image image-cuda image-vulkan smoke
+.PHONY: models models-fp32 test image image-cuda image-cuda13 image-vulkan smoke
 
 models: $(addprefix $(MODEL_DIR)/onnx-int8/,$(BUNDLE_FILES)) $(MODEL_DIR)/stress.trie
 models-fp32: $(addprefix $(MODEL_DIR)/onnx/,$(BUNDLE_FILES)) $(MODEL_DIR)/stress.trie
@@ -32,6 +32,10 @@ image:
 
 image-cuda:
 	docker build -f docker/Dockerfile.cuda -t holostts-wyoming .
+
+image-cuda13:
+	docker build -f docker/Dockerfile.cuda --build-arg CUDA_BASE=nvidia/cuda:13.0.3-cudnn-runtime-ubuntu24.04 \
+		--build-arg ORT_GPU=1.32.0 -t holostts-wyoming:cuda13 .
 
 image-vulkan:
 	docker build -f docker/Dockerfile.vulkan -t holostts-wyoming:vulkan .
