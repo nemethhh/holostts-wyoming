@@ -29,3 +29,23 @@ def test_build_chain_unknown_step_lists_known():
     register("t_a")(lambda c: lambda s: s + "a")
     with pytest.raises(ValueError, match="t_a"):
         build_chain(["nope"], StepConfig())
+
+
+def test_overlong_sentence_is_split_for_the_engine():
+    from holostts_wyoming.pipeline import make_phonemizer
+
+    register("t_id")(lambda c: lambda s: s)
+    sentence = ", ".join(["увімкнено світло у вітальні та на кухні"] * 12) + "."
+    parts = make_phonemizer(StepConfig(), ["t_id"])(sentence)
+    assert len(parts) > 1
+    assert all(len(p) <= 200 for p in parts)
+    assert " ".join(parts).replace(",", "").split() == sentence.replace(",", "").split()
+
+
+def test_overlong_sentence_without_punctuation_splits_at_spaces():
+    from holostts_wyoming.pipeline import make_phonemizer
+
+    register("t_id")(lambda c: lambda s: s)
+    sentence = " ".join(["слово"] * 80)
+    parts = make_phonemizer(StepConfig(), ["t_id"])(sentence)
+    assert all(len(p) <= 200 for p in parts) and " ".join(parts).split() == sentence.split()

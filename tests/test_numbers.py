@@ -18,9 +18,9 @@ CASES = [
     ("Таймер на 1 хвилину", "Таймер на одну хвилину"),
     ("Таймер на 21 хвилину", "Таймер на двадцять одну хвилину"),
     ("на 2 години", "на дві години"),
-    ("Зараз 15:30", "Зараз п'ятнадцята тридцять"),
-    ("07:05", "сьома нуль п'ять"),
-    ("3:00", "третя нуль нуль"),
+    ("Зараз 15:30", "Зараз п'ятна\u0301дцята тридцять"),
+    ("07:05", "сьо\u0301ма нуль п'ять"),
+    ("3:00", "тре\u0301тя нуль нуль"),
     ("Увімкнено 3 світильники", "Увімкнено три світильники"),
     ("Без чисел.", "Без чисел."),
 ]
@@ -29,3 +29,28 @@ CASES = [
 @pytest.mark.parametrize("text,expected", CASES)
 def test_numbers(text, expected):
     assert num(text) == expected
+
+
+A = "́"
+
+
+def test_midnight_hour():
+    assert num("Зараз 0:15") == "Зараз нуль п'ятнадцять"
+    assert num("00:30") == "нуль тридцять"
+
+
+def test_hours_carry_their_own_stress():
+    assert num("7:05").startswith(f"сьо{A}ма ")
+    assert num("17:20").startswith(f"сімна{A}дцята ")
+    assert num("5:00").startswith(f"п'я{A}та ")
+    assert num("21:10").startswith(f"два{A}дцять пе{A}рша ")
+
+
+@pytest.mark.parametrize("text", ["2026.11.1", "10.1.2.3", "1 000 000", "Кімната 12б", "3×4"])
+def test_no_digit_is_left_behind(text):
+    assert not any(c.isdigit() for c in num(text))
+
+
+def test_plus_sign():
+    chain = build_chain(["normalize", "numbers", "overrides"], StepConfig())
+    assert chain("+5 °C") == "плюс п'ять градусів."

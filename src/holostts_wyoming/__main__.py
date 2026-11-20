@@ -52,13 +52,12 @@ async def serve(args: argparse.Namespace) -> None:
 
     overrides = read_overrides(args.overrides_file)
     phonemizer = make_phonemizer(StepConfig(overrides=overrides, trie_path=args.trie), args.steps.split(","))
-    engine = make_engine(args.model_dir, args.device, args.threads)
+    engine = make_engine(args.model_dir, args.device, args.threads, warm_up=phonemizer(_WARM_UP)[0])
     voices = engine.voices()
     voice = args.voice
     if voice not in voices:
         _LOGGER.warning("Unknown default voice %r, using %s", voice, voices[0])
         voice = voices[0]
-    engine.warm_up(phonemizer(_WARM_UP)[0])
     _LOGGER.info(
         "Loaded %s on %s (%d voices, default %s, %d overrides)", args.model_dir, engine.device, len(voices), voice, len(overrides)
     )

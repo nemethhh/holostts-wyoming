@@ -117,8 +117,7 @@ class HolosEngine:
             pass
 
 
-def make_engine(model_dir: Path, device: str, threads: int) -> HolosEngine:
-    """device: cpu, cuda or webgpu (Vulkan: AMD, Intel or NVIDIA); falls back to CPU with a warning."""
+def _accelerated_engine(model_dir: Path, device: str, threads: int) -> HolosEngine:
     if device != "webgpu":
         return HolosEngine(model_dir, providers_for(device), threads)
     engine = HolosEngine(model_dir, [_CPU], threads)
@@ -128,4 +127,24 @@ def make_engine(model_dir: Path, device: str, threads: int) -> HolosEngine:
             engine.use_webgpu(options)
         except Exception as error:
             _LOGGER.warning("WebGPU failed (%s), using CPU", error)
+    return engine
+
+
+def make_engine(model_dir: Path, device: str, threads: int, warm_up: str | None = None) -> HolosEngine:
+    """device: cpu, cuda or webgpu (Vulkan: AMD, Intel); falls back to CPU with a warning.
+
+    With warm_up phonemes, one synthesis runs first, so a GPU that loads but cannot run also falls back.
+    """
+    engine = _accelerated_engine(model_dir, device, threads)
+    if warm_up is None:
+        return engine
+    try:
+        engine.warm_up(warm_up)
+        return engine
+    except Exception as error:
+        if engine.device == "cpu":
+            raise
+        _LOGGER.warning("Synthesis on %s failed (%s), using CPU", engine.device, error)
+    engine = HolosEngine(model_dir, [_CPU], threads)
+    engine.warm_up(warm_up)
     return engine

@@ -20,10 +20,19 @@ _WORD = r"[А-ЩЬЮЯЄІЇҐа-щьюяєіїґ'́]+"
 
 _TIME = re.compile(r"(?<![\d:])([01]?\d|2[0-3]):([0-5]\d)(?![\d:])")
 _NUMBER = re.compile(
-    r"(?<![\w.,])(-)?(\d+)(?:[.,](\d+))?(?![\d])"
+    r"(?<![\w.,])([+-])?(\d+)(?:[.,](\d+))?(?![\d])"
     r"(?:\s*(°C|°F|°|%)|(\s+)(" + _WORD + r"))?"
 )
 _NA_BEFORE = re.compile(r"(?:^|\s)[Нн]а\s+$")
+_DIGITS = re.compile(r"\d+")
+# hours as feminine ordinals, stressed here: the dictionary's first record for п'ята / сьома is another word
+_A = "\u0301"
+_HOURS = [
+    "нуль", f"пе{_A}рша", f"дру{_A}га", f"тре{_A}тя", f"четве{_A}рта", f"п'я{_A}та", f"шо{_A}ста", f"сьо{_A}ма",
+    f"во{_A}сьма", f"дев'я{_A}та", f"деся{_A}та", f"одина{_A}дцята", f"двана{_A}дцята", f"трина{_A}дцята",
+    f"чотирна{_A}дцята", f"п'ятна{_A}дцята", f"шістна{_A}дцята", f"сімна{_A}дцята", f"вісімна{_A}дцята",
+    f"дев'ятна{_A}дцята", f"двадця{_A}та", f"два{_A}дцять пе{_A}рша", f"два{_A}дцять дру{_A}га", f"два{_A}дцять тре{_A}тя",
+]
 
 
 def _words(n: int, feminine: bool = False, case: str | None = None) -> str:
@@ -52,13 +61,6 @@ def _decimal(whole: int, frac: str) -> str:
     return f"{_words(whole, feminine=True)} {whole_part} {_words(f, feminine=True)} {denominator}"
 
 
-def _hour(h: int) -> str:
-    ordinal = num2words(h, lang="uk", to="ordinal")
-    if ordinal.endswith("ій"):
-        return ordinal[:-2] + "я"
-    return ordinal[:-2] + "а"
-
-
 def _time(m: re.Match) -> str:
     hour, minutes = int(m.group(1)), m.group(2)
     if minutes == "00":
@@ -67,13 +69,13 @@ def _time(m: re.Match) -> str:
         tail = "нуль " + _words(int(minutes), feminine=True)
     else:
         tail = _words(int(minutes), feminine=True)
-    return f"{_hour(hour)} {tail}"
+    return f"{_HOURS[hour]} {tail}"
 
 
 def _number(m: re.Match, text: str) -> str:
-    minus, whole, frac, symbol, space, noun = m.groups()
+    sign, whole, frac, symbol, space, noun = m.groups()
     n = int(whole)
-    prefix = "мінус " if minus else ""
+    prefix = {"-": "мінус ", "+": "плюс "}.get(sign or "", "")
     feminine = bool(noun) and noun.lower().startswith(_FEMININE_STEMS)
     if frac is not None:
         spoken = _decimal(n, frac)
@@ -94,6 +96,8 @@ def _number(m: re.Match, text: str) -> str:
 def numbers(config: StepConfig) -> TextStep:
     def step(text: str) -> str:
         text = _TIME.sub(_time, text)
-        return _NUMBER.sub(lambda m: _number(m, text), text)
+        text = _NUMBER.sub(lambda m: _number(m, text), text)
+        # whatever the rules above left (versions, addresses, "1 000") is read digit group by digit group
+        return _DIGITS.sub(lambda m: _words(int(m.group(0))), text)
 
     return step

@@ -5,9 +5,6 @@ services:
     restart: unless-stopped
     devices:
       - /dev/dri:/dev/dri
-    group_add:
-      # the host's render group id: RENDER_GID=$(getent group render | cut -d: -f3) docker compose up -d
-      - "${RENDER_GID:-render}"
     # host network lets Home Assistant discover it by zeroconf; otherwise publish 10200 and add it by host/port
     network_mode: host
     environment:

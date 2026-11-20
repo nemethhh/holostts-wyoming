@@ -1,5 +1,10 @@
+import re
+
 from ..pipeline import StepConfig, TextStep, register
 from .stress import ACUTE, WORD
+
+
+_PLUS_AFTER_VOWEL = re.compile(r"(?<=[АЕЄИІЇОУЮЯаеєиіїоуюя])\+")
 
 
 @register("overrides")
@@ -14,7 +19,7 @@ def overrides(config: StepConfig) -> TextStep:
         return stressed[0].upper() + stressed[1:] if word[0].isupper() else stressed
 
     def step(text: str) -> str:
-        text = text.replace("+", ACUTE)
+        text = _PLUS_AFTER_VOWEL.sub(ACUTE, text)
         return WORD.sub(replace, text) if table else text
 
     return step

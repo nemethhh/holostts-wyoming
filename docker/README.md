@@ -22,7 +22,7 @@ Two images run HolosTTS (FP32 ONNX model) on a GPU and fall back to the CPU, wit
 mkdir holostts && cd holostts
 curl -fsSLO https://raw.githubusercontent.com/nemethhh/holostts-wyoming/main/docker/compose.yaml          # NVIDIA
 # curl -fsSLO https://raw.githubusercontent.com/nemethhh/holostts-wyoming/main/docker/compose.vulkan.yaml # AMD/Intel
-docker compose -f compose.yaml up -d                 # AMD/Intel: RENDER_GID=$(getent group render | cut -d: -f3) docker compose -f compose.vulkan.yaml up -d
+docker compose -f compose.yaml up -d                 # AMD/Intel: -f compose.vulkan.yaml
 docker compose -f compose.yaml logs   # "... not available, using CPU" means the GPU is not visible to the container
 ```
 

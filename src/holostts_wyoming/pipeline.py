@@ -15,6 +15,9 @@ DEFAULT_STEPS = ["normalize", "numbers", "overrides", "stress", "ipa"]
 
 _REGISTRY: dict[str, StepFactory] = {}
 _SENTENCE_END = re.compile(r"(?<=[.!?…])\s+|\n+")
+_CLAUSE_END = re.compile(r"(?<=[,;:—–])\s+")
+# Holos stops at 1000 frames (~25 s); keep each engine call well below that
+MAX_SENTENCE_CHARS = 200
 
 
 @dataclass
@@ -49,13 +52,33 @@ def split_sentences(text: str) -> list[str]:
     return [s.strip() for s in _SENTENCE_END.split(text) if s.strip()]
 
 
+def _pack(pieces: list[str], limit: int) -> list[str]:
+    out: list[str] = []
+    for piece in pieces:
+        if out and len(out[-1]) + 1 + len(piece) <= limit:
+            out[-1] += " " + piece
+        else:
+            out.append(piece)
+    return out
+
+
+def cap_length(sentence: str, limit: int = MAX_SENTENCE_CHARS) -> list[str]:
+    """Split a sentence too long for one synthesis at clause punctuation, then at spaces."""
+    if len(sentence) <= limit:
+        return [sentence]
+    out = []
+    for clause in _pack(_CLAUSE_END.split(sentence), limit):
+        out += [clause] if len(clause) <= limit else _pack(clause.split(), limit)
+    return out
+
+
 def make_phonemizer(config: StepConfig, steps: list[str] | None = None) -> Callable[[str], list[str]]:
     """Build the chain once; returns text -> one phoneme string per sentence, silent sentences dropped."""
     chain = build_chain(steps or DEFAULT_STEPS, config)
 
     def phonemizer(text: str) -> list[str]:
         out = []
-        for sentence in split_sentences(text):
+        for sentence in (part for s in split_sentences(text) for part in cap_length(s)):
             phonemes = chain(sentence)
             if any(c.isalpha() for c in phonemes):
                 out.append(phonemes)

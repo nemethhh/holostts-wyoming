@@ -59,6 +59,7 @@ def test_webgpu_without_plugin_falls_back_to_cpu(monkeypatch, caplog):
         return real_import(name, *args, **kwargs)
 
     monkeypatch.setattr(builtins, "__import__", no_webgpu)
+    monkeypatch.setattr(holos, "_render_node_available", lambda: True)
     assert holos.webgpu_session_options(threads=2) is None
     assert "WebGPU not available" in caplog.text
 
@@ -90,3 +91,20 @@ def test_webgpu_without_render_node_falls_back_to_cpu(monkeypatch, caplog):
     monkeypatch.setattr(holos, "_render_node_available", lambda: False)
     assert holos.webgpu_session_options(threads=2) is None
     assert "no GPU" in caplog.text
+
+
+@needs_models
+def test_accelerator_failing_at_run_time_falls_back_to_cpu(monkeypatch, caplog):
+    import holostts_wyoming.engines.holos as holos
+
+    class Broken:
+        device = "cuda"
+
+        def warm_up(self, phonemes):
+            raise RuntimeError("no kernel image is available for execution on the device")
+
+    monkeypatch.setattr(holos, "_accelerated_engine", lambda model_dir, device, threads: Broken())
+    [phonemes] = phonemize("Привіт.", StepConfig(trie_path=TRIE))
+    engine = holos.make_engine(INT8, "cuda", threads=2, warm_up=phonemes)
+    assert engine.device == "cpu"
+    assert "using CPU" in caplog.text

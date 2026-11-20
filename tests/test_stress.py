@@ -37,3 +37,10 @@ def test_override_wins_over_dictionary():
 
 def test_plus_in_text_becomes_stress():
     assert build_chain(["overrides"], StepConfig())("Му+дрого") == f"Му{A}дрого"
+
+
+@needs_models
+def test_hyphenated_words_keep_stress():
+    s = build_chain(["stress"], StepConfig(trie_path=TRIE))
+    out = s("будь-який хто-небудь по-українськи")
+    assert all(A in word for word in out.split())
