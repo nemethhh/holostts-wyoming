@@ -1,1 +1,1 @@
-from . import normalize  # noqa: F401
+from . import normalize, numbers  # noqa: F401
