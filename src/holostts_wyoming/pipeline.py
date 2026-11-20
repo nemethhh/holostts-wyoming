@@ -47,3 +47,22 @@ def build_chain(names: list[str], config: StepConfig) -> TextStep:
 
 def split_sentences(text: str) -> list[str]:
     return [s.strip() for s in _SENTENCE_END.split(text) if s.strip()]
+
+
+def make_phonemizer(config: StepConfig, steps: list[str] | None = None) -> Callable[[str], list[str]]:
+    """Build the chain once; returns text -> one phoneme string per sentence, silent sentences dropped."""
+    chain = build_chain(steps or DEFAULT_STEPS, config)
+
+    def phonemizer(text: str) -> list[str]:
+        out = []
+        for sentence in split_sentences(text):
+            phonemes = chain(sentence)
+            if any(c.isalpha() for c in phonemes):
+                out.append(phonemes)
+        return out
+
+    return phonemizer
+
+
+def phonemize(text: str, config: StepConfig, steps: list[str] | None = None) -> list[str]:
+    return make_phonemizer(config, steps)(text)

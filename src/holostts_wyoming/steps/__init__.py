@@ -1,1 +1,1 @@
-from . import normalize, numbers, overrides, stress  # noqa: F401
+from . import ipa, normalize, numbers, overrides, stress  # noqa: F401
