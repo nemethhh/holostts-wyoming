@@ -28,7 +28,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--uri", default=env("HOLOSTTS_URI", "tcp://0.0.0.0:10200"))
     p.add_argument("--model-dir", type=Path, default=Path(env("HOLOSTTS_MODEL_DIR", _MODELS / "onnx-int8")))
     p.add_argument("--trie", type=Path, default=_MODELS / "stress.trie")
-    p.add_argument("--device", choices=["cpu", "cuda"], default=env("HOLOSTTS_DEVICE", "cpu"))
+    p.add_argument("--device", choices=["cpu", "cuda", "webgpu"], default=env("HOLOSTTS_DEVICE", "cpu"))
     p.add_argument("--voice", default=env("HOLOSTTS_VOICE", "Speaker_0"))
     p.add_argument("--speed", type=float, default=float(env("HOLOSTTS_SPEED", "1.0")))
     p.add_argument("--threads", type=int, default=int(env("HOLOSTTS_THREADS", "2")))
@@ -48,18 +48,20 @@ def read_overrides(path: Path) -> list[str]:
 
 
 async def serve(args: argparse.Namespace) -> None:
-    from .engines.holos import HolosEngine, providers_for
+    from .engines.holos import make_engine
 
     overrides = read_overrides(args.overrides_file)
     phonemizer = make_phonemizer(StepConfig(overrides=overrides, trie_path=args.trie), args.steps.split(","))
-    engine = HolosEngine(args.model_dir, providers_for(args.device), args.threads)
+    engine = make_engine(args.model_dir, args.device, args.threads)
     voices = engine.voices()
     voice = args.voice
     if voice not in voices:
         _LOGGER.warning("Unknown default voice %r, using %s", voice, voices[0])
         voice = voices[0]
     engine.warm_up(phonemizer(_WARM_UP)[0])
-    _LOGGER.info("Loaded %s (%d voices, default %s, %d overrides)", args.model_dir, len(voices), voice, len(overrides))
+    _LOGGER.info(
+        "Loaded %s on %s (%d voices, default %s, %d overrides)", args.model_dir, engine.device, len(voices), voice, len(overrides)
+    )
 
     server = AsyncServer.from_uri(args.uri)
     if args.zeroconf:

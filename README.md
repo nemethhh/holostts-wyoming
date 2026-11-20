@@ -5,7 +5,8 @@ text-to-speech service for Assist: a natural **Ukrainian** voice, streamed sente
 
 Two ways to run it, from the same code:
 
-- **GPU Docker image** (recommended on a machine with an NVIDIA GPU): `ghcr.io/nemethhh/holostts-wyoming`.
+- **GPU Docker images** (recommended on a machine with a GPU): `ghcr.io/nemethhh/holostts-wyoming` for NVIDIA,
+  `:latest-vulkan` for AMD and Intel.
 - **Home Assistant add-on** (CPU): runs on the Home Assistant machine itself.
 
 ## Add-on
@@ -22,7 +23,7 @@ See [docker/README.md](docker/README.md).
 ## Development
 
 `make models` downloads the pinned model files into `models/`; `make test` runs the tests (pytest);
-`make image` / `make image-cuda` build the images; `make smoke` runs the add-on image and synthesizes one request.
+`make image` / `make image-cuda` / `make image-vulkan` build the images; `make smoke` runs the add-on image and synthesizes one request.
 `tools/wyoming_client.py HOST PORT TEXT OUT.wav [--stream]` talks to any Wyoming TTS server and prints the time to
 first audio.
 

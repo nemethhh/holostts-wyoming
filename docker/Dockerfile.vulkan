@@ -1,0 +1,29 @@
+# Build context: the repository root. Vulkan GPU image (AMD, Intel; amd64) via ONNX Runtime's WebGPU EP.
+ARG BASE=debian:trixie-20261104-slim
+
+FROM ghcr.io/astral-sh/uv:0.13.5 AS uv
+
+FROM $BASE AS build
+RUN apt-get update && apt-get install -y --no-install-recommends python3 git curl ca-certificates make \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=uv /uv /usr/local/bin/uv
+WORKDIR /src
+COPY pyproject.toml uv.lock README.md LICENSE Makefile ./
+COPY src ./src
+ENV UV_PROJECT_ENVIRONMENT=/opt/venv UV_PYTHON=/usr/bin/python3 UV_PYTHON_DOWNLOADS=never UV_COMPILE_BYTECODE=1
+RUN uv sync --frozen --no-dev --no-editable --extra webgpu
+RUN make models-fp32 MODEL_DIR=/models
+
+FROM $BASE
+# no lavapipe: a software Vulkan device would be picked over the faster CPU path
+RUN apt-get update && apt-get install -y --no-install-recommends python3 libvulkan1 mesa-vulkan-drivers \
+    && rm -rf /var/lib/apt/lists/* /usr/share/vulkan/icd.d/lvp_icd*.json
+COPY --from=build /opt/venv /opt/venv
+COPY --from=build /models /models
+ENV HOLOSTTS_MODELS=/models HOLOSTTS_MODEL_DIR=/models/onnx HOLOSTTS_DEVICE=webgpu HOLOSTTS_ZEROCONF=1 \
+    HOLOSTTS_THREADS=4 PATH=/opt/venv/bin:$PATH
+EXPOSE 10200
+LABEL org.opencontainers.image.source="https://github.com/nemethhh/holostts-wyoming" \
+      org.opencontainers.image.description="HolosTTS Ukrainian text to speech, Wyoming server for Vulkan GPUs (AMD, Intel)" \
+      org.opencontainers.image.licenses="MIT"
+ENTRYPOINT ["/opt/venv/bin/holostts-wyoming"]

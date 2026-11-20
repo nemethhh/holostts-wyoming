@@ -23,3 +23,7 @@ def test_overrides_file(tmp_path: Path):
 
 def test_missing_overrides_file_is_empty(tmp_path: Path):
     assert read_overrides(tmp_path / "none.txt") == []
+
+
+def test_webgpu_device_accepted():
+    assert parse_args(["--device", "webgpu"]).device == "webgpu"

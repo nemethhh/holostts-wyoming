@@ -1,0 +1,18 @@
+# AMD or Intel GPU through Vulkan
+services:
+  holostts:
+    image: ghcr.io/nemethhh/holostts-wyoming:latest-vulkan
+    restart: unless-stopped
+    devices:
+      - /dev/dri:/dev/dri
+    group_add:
+      # the host's render group id: RENDER_GID=$(getent group render | cut -d: -f3) docker compose up -d
+      - "${RENDER_GID:-render}"
+    # host network lets Home Assistant discover it by zeroconf; otherwise publish 10200 and add it by host/port
+    network_mode: host
+    environment:
+      HOLOSTTS_VOICE: Speaker_0
+      HOLOSTTS_SPEED: "1.0"
+      HOLOSTTS_DEBUG: "0"
+    volumes:
+      - ./config:/config

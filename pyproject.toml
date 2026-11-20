@@ -20,6 +20,12 @@ dependencies = [
 [project.scripts]
 holostts-wyoming = "holostts_wyoming.__main__:main"
 
+[project.optional-dependencies]
+webgpu = [
+    "onnx>=1.23.2",
+    "onnxruntime-ep-webgpu>=0.6.0",
+]
+
 [dependency-groups]
 dev = ["pytest>=8"]
 

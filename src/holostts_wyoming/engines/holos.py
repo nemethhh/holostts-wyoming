@@ -1,5 +1,7 @@
 import ctypes
+import glob
 import logging
+import os
 from pathlib import Path
 from typing import Iterator
 
@@ -32,14 +34,76 @@ def providers_for(device: str) -> list[str]:
     return [_CPU]
 
 
+def _session_options(threads: int) -> ort.SessionOptions:
+    options = ort.SessionOptions()
+    options.intra_op_num_threads = threads
+    # matches holos_onnx's default: idle spinning threads slow the next stage down
+    options.add_session_config_entry("session.intra_op.allow_spinning", "0")
+    return options
+
+
+def _render_node_available() -> bool:
+    # without a GPU render node Dawn may pick a software Vulkan device, far slower than the CPU EP
+    return any(os.access(node, os.R_OK | os.W_OK) for node in glob.glob("/dev/dri/renderD*"))
+
+
+def webgpu_session_options(threads: int) -> ort.SessionOptions | None:
+    """Session options bound to the first WebGPU (Vulkan) GPU, or None when there is none."""
+    if not _render_node_available():
+        _LOGGER.warning("WebGPU not available (no GPU render node in /dev/dri), using CPU")
+        return None
+    try:
+        import onnxruntime_ep_webgpu as webgpu
+    except ImportError:
+        _LOGGER.warning("WebGPU not available (onnxruntime-ep-webgpu is not installed), using CPU")
+        return None
+    try:
+        ort.register_execution_provider_library("webgpu", webgpu.get_library_path())
+    except Exception as error:
+        if "already registered" not in str(error):
+            _LOGGER.warning("WebGPU not available (%s), using CPU", error)
+            return None
+    devices = [
+        d for d in ort.get_ep_devices()
+        if d.ep_name == webgpu.get_ep_name() and d.device.type == ort.OrtHardwareDeviceType.GPU
+    ]
+    if not devices:
+        _LOGGER.warning("WebGPU not available (no GPU found), using CPU")
+        return None
+    options = _session_options(threads)
+    options.log_severity_level = 3  # shape ops placed on CPU are expected; don't warn per session
+    options.add_provider_for_devices(devices[:1], {})
+    return options
+
+
 class HolosEngine:
     def __init__(self, model_dir: Path, providers: list[str], threads: int):
-        options = ort.SessionOptions()
-        options.intra_op_num_threads = threads
-        # matches holos_onnx's default: idle spinning threads slow the next stage down
-        options.add_session_config_entry("session.intra_op.allow_spinning", "0")
-        self._model = HolosTTS(str(model_dir), streaming=True, providers=providers, session_options=options)
+        self._model = HolosTTS(str(model_dir), streaming=True, providers=providers, session_options=_session_options(threads))
         self.sample_rate = self._model.sample_rate
+        self.device = "cuda" if _CUDA in providers else "cpu"
+
+    def use_webgpu(self, options: ort.SessionOptions) -> None:
+        """Rebuild the four stage sessions on WebGPU (holos_onnx always passes its own provider list)."""
+        from .convtranspose import rewrite_conv_transpose
+        import onnx
+
+        model_dir = self._model.model_dir
+        manifest, streaming = self._model.manifest, self._model.streaming
+        files = {
+            "encoder": manifest["encoder"],
+            "prosody": manifest["prosody"],
+            "source": streaming["source"],
+            "decoder": streaming["decoder"],
+        }
+        sessions = {}
+        for stage, filename in files.items():
+            model = onnx.load(model_dir / filename)
+            if stage == "decoder":
+                model = rewrite_conv_transpose(model)
+            sessions[stage] = ort.InferenceSession(model.SerializeToString(), options)
+        for stage, session in sessions.items():
+            setattr(self._model, f"{stage}_session", session)
+        self.device = "webgpu"
 
     def voices(self) -> list[str]:
         return self._model.list_voices()
@@ -51,3 +115,17 @@ class HolosEngine:
     def warm_up(self, phonemes: str) -> None:
         for _ in self.stream(phonemes, self.voices()[0], 1.0):
             pass
+
+
+def make_engine(model_dir: Path, device: str, threads: int) -> HolosEngine:
+    """device: cpu, cuda or webgpu (Vulkan: AMD, Intel or NVIDIA); falls back to CPU with a warning."""
+    if device != "webgpu":
+        return HolosEngine(model_dir, providers_for(device), threads)
+    engine = HolosEngine(model_dir, [_CPU], threads)
+    options = webgpu_session_options(threads)
+    if options is not None:
+        try:
+            engine.use_webgpu(options)
+        except Exception as error:
+            _LOGGER.warning("WebGPU failed (%s), using CPU", error)
+    return engine
