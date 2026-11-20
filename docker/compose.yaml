@@ -1,0 +1,13 @@
+services:
+  holostts:
+    image: ghcr.io/nemethhh/holostts-wyoming:latest
+    restart: unless-stopped
+    gpus: all
+    # host network lets Home Assistant discover it by zeroconf; otherwise publish 10200 and add it by host/port
+    network_mode: host
+    environment:
+      HOLOSTTS_VOICE: Speaker_0
+      HOLOSTTS_SPEED: "1.0"
+      HOLOSTTS_DEBUG: "0"
+    volumes:
+      - ./config:/config

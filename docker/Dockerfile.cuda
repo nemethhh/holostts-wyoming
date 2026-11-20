@@ -1,0 +1,35 @@
+# Build context: the repository root. NVIDIA GPU image (amd64).
+# onnxruntime-gpu 1.20.0 is the newest PyPI build for CUDA 12 that still has sm_61 (Pascal, GTX 10xx) kernels;
+# later builds start at sm_70 (CUDA 12 feed) or need CUDA 13, which dropped Pascal.
+ARG CUDA_BASE=nvidia/cuda:12.6.3-cudnn-runtime-ubuntu24.04
+
+FROM ghcr.io/astral-sh/uv:0.13.5 AS uv
+
+FROM $CUDA_BASE AS build
+RUN apt-get update && apt-get install -y --no-install-recommends python3 git curl ca-certificates make \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=uv /uv /usr/local/bin/uv
+WORKDIR /src
+COPY pyproject.toml uv.lock README.md LICENSE Makefile ./
+COPY src ./src
+ENV UV_PYTHON=/usr/bin/python3 UV_PYTHON_DOWNLOADS=never UV_COMPILE_BYTECODE=1
+RUN uv venv /opt/venv \
+    && uv export --frozen --no-dev --no-emit-project --no-hashes \
+       | grep -vE "^onnxruntime==|sys_platform == 'never'" > /tmp/requirements.txt \
+    && uv pip install --python /opt/venv/bin/python --no-deps -r /tmp/requirements.txt . \
+    && uv pip install --no-config --python /opt/venv/bin/python onnxruntime-gpu==1.20.0 \
+    && /opt/venv/bin/python -c "import holos_onnx, onnxruntime, holostts_wyoming.server; print(onnxruntime.__version__)"
+RUN make models-fp32 MODEL_DIR=/models
+
+FROM $CUDA_BASE
+RUN apt-get update && apt-get install -y --no-install-recommends python3 \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=build /opt/venv /opt/venv
+COPY --from=build /models /models
+ENV HOLOSTTS_MODELS=/models HOLOSTTS_MODEL_DIR=/models/onnx HOLOSTTS_DEVICE=cuda HOLOSTTS_ZEROCONF=1 \
+    HOLOSTTS_THREADS=4 PATH=/opt/venv/bin:$PATH
+EXPOSE 10200
+LABEL org.opencontainers.image.source="https://github.com/nemethhh/holostts-wyoming" \
+      org.opencontainers.image.description="HolosTTS Ukrainian text to speech, Wyoming server for NVIDIA GPUs" \
+      org.opencontainers.image.licenses="MIT"
+ENTRYPOINT ["/opt/venv/bin/holostts-wyoming"]

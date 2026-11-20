@@ -9,7 +9,7 @@ requires-python = ">=3.12"
 dependencies = [
     "wyoming==1.11.0",
     "holos-tts-onnx==0.4",
-    "onnxruntime>=1.28",
+    "onnxruntime>=1.20",
     "numpy>=1.24",
     "marisa-trie>=1.2",
     "num2words==0.5.14",

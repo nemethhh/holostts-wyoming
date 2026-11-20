@@ -38,7 +38,7 @@ stress, IPA phonemes.
 
 ## Credits and licence
 
-MIT. HolosTTS and its models by Serhiy Stetskovych (patriotyk), MIT. Stress dictionary from
+MIT. HolosTTS and its models by patriotyk, MIT. Stress dictionary from
 [ukrainian-word-stress](https://github.com/lang-uk/ukrainian-word-stress) (MIT), phonemes by
 [ipa-uk](https://github.com/patriotyk/ipa-uk) (MIT), number words by [num2words](https://github.com/savoirfairelinux/num2words) (LGPL).
 

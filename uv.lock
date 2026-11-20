@@ -128,7 +128,7 @@ requires-dist = [
     { name = "marisa-trie", specifier = ">=1.2" },
     { name = "num2words", specifier = "==0.5.14" },
     { name = "numpy", specifier = ">=1.24" },
-    { name = "onnxruntime", specifier = ">=1.28" },
+    { name = "onnxruntime", specifier = ">=1.20" },
     { name = "wyoming", specifier = "==1.11.0" },
     { name = "zeroconf", specifier = ">=0.132" },
 ]

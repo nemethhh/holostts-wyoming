@@ -17,10 +17,27 @@ def test_holos_engine_streams_speech():
     assert np.isfinite(audio).all()
 
 
-def test_cuda_falls_back_to_cpu_when_unavailable(caplog):
-    import onnxruntime
+def test_cuda_compiled_in_but_no_device_falls_back_to_cpu(monkeypatch, caplog):
+    import holostts_wyoming.engines.holos as holos
 
-    if "CUDAExecutionProvider" in onnxruntime.get_available_providers():
-        return
+    monkeypatch.setattr(holos.ort, "get_available_providers", lambda: ["CUDAExecutionProvider", "CPUExecutionProvider"])
+    monkeypatch.setattr(holos, "_cuda_device_count", lambda: 0)
     assert providers_for("cuda") == ["CPUExecutionProvider"]
     assert "CUDA not available" in caplog.text
+
+
+def test_cuda_with_device(monkeypatch):
+    import holostts_wyoming.engines.holos as holos
+
+    monkeypatch.setattr(holos.ort, "get_available_providers", lambda: ["CUDAExecutionProvider", "CPUExecutionProvider"])
+    monkeypatch.setattr(holos, "_cuda_device_count", lambda: 1)
+    assert providers_for("cuda") == ["CUDAExecutionProvider", "CPUExecutionProvider"]
+
+
+def test_cuda_device_count_without_driver_is_zero():
+    import ctypes.util
+
+    from holostts_wyoming.engines.holos import _cuda_device_count
+
+    if ctypes.util.find_library("cuda") is None:
+        assert _cuda_device_count() == 0

@@ -1,3 +1,4 @@
+import ctypes
 import logging
 from pathlib import Path
 from typing import Iterator
@@ -11,9 +12,21 @@ _CPU = "CPUExecutionProvider"
 _CUDA = "CUDAExecutionProvider"
 
 
+def _cuda_device_count() -> int:
+    # onnxruntime-gpu lists CUDA whenever it is compiled in; without a driver and device it crashes later
+    try:
+        cuda = ctypes.CDLL("libcuda.so.1")
+    except OSError:
+        return 0
+    count = ctypes.c_int(0)
+    if cuda.cuInit(0) != 0 or cuda.cuDeviceGetCount(ctypes.byref(count)) != 0:
+        return 0
+    return count.value
+
+
 def providers_for(device: str) -> list[str]:
     if device == "cuda":
-        if _CUDA in ort.get_available_providers():
+        if _CUDA in ort.get_available_providers() and _cuda_device_count() > 0:
             return [_CUDA, _CPU]
         _LOGGER.warning("CUDA not available, using CPU")
     return [_CPU]
